@@ -1,52 +1,84 @@
 import pandas as pd 
-from pathlib import Path 
 from typing import Union
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import root_mean_squared_error as rmse
+from functools import cached_property
 
 TARGET = 'duration'
 CATEGORICAL = ['PULocationID', 'DOLocationID']
+TRAINING_PATH = "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2023-01.parquet"
+VALIDATION_PATH = "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2023-02.parquet",
 
-def load_data(path:Path) -> pd.DataFrame:
-    return pd.read_parquet(path)
+class TaxiRidePrediction:
+    
+    def __init__(self, path, target, vars):
+        self.path = path
+        self.target = target
+        self.vars = vars 
 
-def calculate_duration(df:pd.DataFrame) -> pd.DataFrame:
-    df[TARGET] = (df['tpep_dropoff_datetime'] - df['tpep_pickup_datetime']).dt.total_seconds()/60
-    return df 
+    @cached_property
+    def raw_data(self) -> pd.DataFrame:
+        return pd.read_parquet(self.path)
+    
+    @staticmethod
+    def calculate_duration(df:pd.DataFrame) -> pd.DataFrame:
+        df[TARGET] = (df['tpep_dropoff_datetime'] - df['tpep_pickup_datetime']).dt.total_seconds()/60
+        return df       
 
-def filter_outliers(df:pd.DataFrame) -> pd.DataFrame:
-    return df.loc[df[TARGET].between(1,60,inclusive='both')]
+    @staticmethod
+    def filter_outliers(df:pd.DataFrame) -> pd.DataFrame:
+        return df.loc[df[TARGET].between(1,60,inclusive='both')]
+    
+    @cached_property
+    def processed_data(self) -> pd.DataFrame:
+        return self.raw_data.pipe(self.calculate_duration).pipe(self.filter_outliers)
+    
+    @cached_property
+    def regression_matrices(self) -> tuple:
+        
+        return (
+            self.processed_data[self.vars].astype(str).to_dict(orient='records'),
+            self.processed_data[self.target].values
+        )
 
-def transform_raw_data(df:pd.DataFrame) -> pd.DataFrame:
-    return (
-        df.pipe(calculate_duration)
-          .pipe(filter_outliers)
+def main():
+
+    # Creating training pipeline class
+    train = TaxiRidePrediction(
+        path = TRAINING_PATH[0],
+        target = TARGET,
+        vars = CATEGORICAL
     )
 
-def get_matrices(df:pd.DataFrame) -> tuple:
-    X = df[CATEGORICAL].astype(str).to_dict(orient='records')
-    y = df[TARGET].values
+    # Fit vectorizer
+    dv = DictVectorizer()
+    X_train = dv.fit_transform(X = train.regression_matrices[0])
+    y_train = train.regression_matrices[1]
     
-    return (X, y)
-
-def vectorize_matrix(X:dict, dv:Union[DictVectorizer|None]=None) -> tuple:
-    if dv is None:
-        dv = DictVectorizer()
-        X_out = dv.fit_transform(X) 
-    else:
-        X_out = dv.transform(X)
+    # Fit regression 
+    lr = LinearRegression()
+    lr.fit(X = X_train, y = y_train)
+    y_train_pred = lr.predict(X = X_train)
     
-    return (X_out, dv) 
-
-def predict_evaluate(X, y, lr:Union[LinearRegression|None]=None) -> tuple:
-    if lr is None:
-        lr = LinearRegression()
-        lr.fit(X, y)
-        
-    y_pred = lr.predict(X)
+    # Creating validation pipeline     
+    valid = TaxiRidePrediction(
+    path = VALIDATION_PATH[0],
+    target = TARGET,
+    vars = CATEGORICAL
+    )
     
-    return rmse(y, y_pred)
+    # Applying vectorizer
+    X_valid = dv.transform(valid.regression_matrices[0])
+    y_valid = valid.regression_matrices[1]
+    
+    # Applyinh regression 
+    y_valid_pred = lr.predict(X_valid)
 
-
-
+    return{
+        'rmse_training_sample': rmse(y_train, y_train_pred),
+        'rmse_validation_sample': rmse(y_valid, y_valid_pred)
+    }
+    
+if __name__ == "__main__":
+    main()
