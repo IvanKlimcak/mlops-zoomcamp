@@ -4,22 +4,30 @@ from sklearn.feature_extraction import DictVectorizer
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import root_mean_squared_error as rmse
 from functools import cached_property
+import logging
+import os 
 
 TARGET = 'duration'
 CATEGORICAL = ['PULocationID', 'DOLocationID']
-TRAINING_PATH = "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2023-01.parquet"
-VALIDATION_PATH = "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2023-02.parquet",
+DATA_PATH = "https://d37ci6vzurychx.cloudfront.net/trip-data/"
+TRAINING_FILE = "yellow_tripdata_2023-01.parquet"
+VALDATION_FILE = "yellow_tripdata_2023-02.parquet"
 
 class TaxiRidePrediction:
     
-    def __init__(self, path, target, vars):
+    def __init__(self, path, file, target, vars):
         self.path = path
+        self.file = file
         self.target = target
         self.vars = vars 
 
+    @property
+    def full_path(self):
+        return os.path.join(self.path, self.file)
+    
     @cached_property
     def raw_data(self) -> pd.DataFrame:
-        return pd.read_parquet(self.path)
+        return pd.read_parquet(self.full_path)
     
     @staticmethod
     def calculate_duration(df:pd.DataFrame) -> pd.DataFrame:
@@ -44,13 +52,20 @@ class TaxiRidePrediction:
 
 def main():
 
+    # Configure logging
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    logger = logging.getLogger(__name__)
+
     # Creating training pipeline class
     train = TaxiRidePrediction(
-        path = TRAINING_PATH[0],
+        path = DATA_PATH,
+        file = TRAINING_FILE,
         target = TARGET,
         vars = CATEGORICAL
     )
 
+    logger.info(f"Loading data: {TRAINING_FILE}")
+    
     # Fit vectorizer
     dv = DictVectorizer()
     X_train = dv.fit_transform(X = train.regression_matrices[0])
@@ -60,25 +75,29 @@ def main():
     lr = LinearRegression()
     lr.fit(X = X_train, y = y_train)
     y_train_pred = lr.predict(X = X_train)
-    
+    rmse_train = rmse(y_train, y_train_pred)
+
+    logger.info(f"RMSE for training sample: {rmse_train}")
+
     # Creating validation pipeline     
     valid = TaxiRidePrediction(
-    path = VALIDATION_PATH[0],
+    path = DATA_PATH,
+    file = VALDATION_FILE,
     target = TARGET,
     vars = CATEGORICAL
     )
+
+    logger.info(f"Loading data: {VALDATION_FILE}")
     
-    # Applying vectorizer
+    # Fitting vectorizer 
     X_valid = dv.transform(valid.regression_matrices[0])
     y_valid = valid.regression_matrices[1]
     
-    # Applyinh regression 
+    # Predicting using trained LR model 
     y_valid_pred = lr.predict(X_valid)
+    rmse_valid = rmse(y_valid, y_valid_pred)
 
-    return{
-        'rmse_training_sample': rmse(y_train, y_train_pred),
-        'rmse_validation_sample': rmse(y_valid, y_valid_pred)
-    }
-    
+    logger.info(f"RMSE for validation sample: {rmse_valid}")
+
 if __name__ == "__main__":
     main()
