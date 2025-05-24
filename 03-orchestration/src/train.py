@@ -28,7 +28,7 @@ if __name__ == "__main__":
     mlflow.set_experiment(experiment_name=Training().mlflow_experiment_name)
     mlflow.mlflow.sklearn.autolog()
 
-    train(
+    model_dump = train(
         training_sample=os.path.join(Location().output_location, "train.pkl"),
         dv_output=os.path.join(Location().output_location, "dv.pkl"),
     )

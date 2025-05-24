@@ -11,7 +11,8 @@ class Location(BaseModel):
 
 class Preprocess(BaseModel):
     categorical: list[str] = ["PULocationID", "DOLocationID"]
-    target: list[str] = ["duration"]
+    target: str = "duration"
+
 
 class Training(BaseModel):
     mlflow_tracking_uri: str = "http://0.0.0.0:5000/"
