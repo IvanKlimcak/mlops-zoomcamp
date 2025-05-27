@@ -1,9 +1,11 @@
 from pathlib import Path
 import pandas as pd
 from prefect import flow, task
-from config import Location, Preprocess
+from .config import Location, Preprocess
 import os
-from utils import dump_pickle
+from .utils import dump_pickle, get_file
+import argparse
+import logging
 
 
 @task
@@ -13,7 +15,7 @@ def read_file(file_path: str) -> pd.DataFrame:
 
 @task
 def calculate_duration(df: pd.DataFrame) -> pd.DataFrame:
-    return (df.lpep_dropoff_datetime - df.lpep_pickup_datetime).dt.total_seconds() / 60
+    return (df.tpep_dropoff_datetime - df.tpep_pickup_datetime).dt.total_seconds() / 60
 
 
 @task
@@ -40,30 +42,35 @@ def preprocess_data(file_path: str, categorical_vars: list, target_var: str) -> 
 
 if __name__ == "__main__":
 
-    train = preprocess_data(
-        file_path=os.path.join(Location().input_location, Location().training_sample),
+    parser = argparse.ArgumentParser(
+        description="Preprocess data for training, validation, and testing."
+    )
+
+    parser.add_argument(
+        "--taxi_tp",
+        type=str,
+        required=True,
+        help="Type of taxi data.",
+    )
+    parser.add_argument(
+        "--year", type=int, required=True, help="Year of the data to preprocess."
+    )
+    parser.add_argument(
+        "--month", type=int, required=True, help="Month of the data to preprocess."
+    )
+
+    args = parser.parse_args()
+
+    processed_data = preprocess_data(
+        file_path=os.path.join(
+            Location().input_location,
+            get_file(taxi_tp=args.taxi_tp, year=args.year, month=args.month),
+        ),
         categorical_vars=Preprocess().categorical,
         target_var=Preprocess().target,
     )
 
     dump_pickle(
-        obj=train, filename=os.path.join(Location().output_location, "train.pkl")
+        obj=processed_data,
+        filename=os.path.join(Location().output_location, "output.pkl"),
     )
-
-    valid = preprocess_data(
-        file_path=os.path.join(Location().input_location, Location().validation_sample),
-        categorical_vars=Preprocess().categorical,
-        target_var=Preprocess().target,
-    )
-
-    dump_pickle(
-        obj=valid, filename=os.path.join(Location().output_location, "valid.pkl")
-    )
-
-    test = preprocess_data(
-        file_path=os.path.join(Location().input_location, Location().test_sample),
-        categorical_vars=Preprocess().categorical,
-        target_var=Preprocess().target,
-    )
-
-    dump_pickle(obj=test, filename=os.path.join(Location().output_location, "test.pkl"))
